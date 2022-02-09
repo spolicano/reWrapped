@@ -1,0 +1,81 @@
+import requests
+import spotipy
+from spotipy.oauth2 import SpotifyOAuth
+import pandas as pd
+import time
+import gspread
+
+
+SPOTIPY_CLIENT_ID='873dbe8819e34d749617a6a4dfdfe8aa'
+SPOTIPY_CLIENT_SECRET='2bb3c77506d34aa2bbda0c940b70c439'
+SPOTIPY_REDIRECT_URI='http://127.0.0.1:9090'
+SCOPE = "user-top-read"
+
+sp = spotipy.Spotify(auth_manager = SpotifyOAuth(client_id = SPOTIPY_CLIENT_ID, client_secret = SPOTIPY_CLIENT_SECRET, redirect_uri = SPOTIPY_REDIRECT_URI, scope = SCOPE))
+
+results = sp.current_user_top_tracks()
+
+top_tracks_short = sp.current_user_top_tracks(limit = 10, offset = 0, time_range = "short_term")
+
+def get_track_ids(time_frame):
+    track_ids = []
+    for song in time_frame['items']:
+        track_ids.append(song['id'])
+    return track_ids
+
+track_ids = get_track_ids(top_tracks_short)
+print(track_ids)
+
+def get_track_features(id):
+    meta = sp.track(id)
+    #metadata
+    name = meta['name']
+    album = meta['album']['name']
+    artist = meta['album']['artists'][0]['name']
+    spotify_url = meta['external_urls']['spotify']
+    album_cover = meta['album']['images'][0]['url']
+    track_info = [name, album, artist, spotify_url, album_cover]
+    return track_info
+
+
+#looping over track track IDs
+tracks = []
+for i in range(len(track_ids)):
+    time.sleep(.5)
+    track = get_track_features(track_ids[i])
+    tracks.append(track)
+
+#creating dataset
+df = pd.DataFrame(tracks, columns = ['name', 'album', 'artist', 'spotify_url', 'album_cover'])
+df.head(5)
+
+gc = gspread.service_account(filename=r'C:\Users\fps_r\Downloads\rewrapped-7fe6b3a04c9f.json')
+
+#Test
+sh = gc.open("reWrapped")
+worksheet = sh.worksheet("short_term")
+val = worksheet.acell('B5').value
+print(val)
+
+worksheet.update([df.columns.values.tolist()] + df.values.tolist())
+
+def insert_to_gsheet(track_ids):
+    tracks = []
+    for i in range(len(track_ids)):
+        time.sleep(.5)
+        track = get_track_features(track_ids[i])
+        tracks.append(track)
+
+    df = pd.DataFrame(tracks, columns = ['name', 'album', 'artist', 'spotify_url', 'album_cover'])
+
+    gc = gspread.service_account(filename=r'C:\Users\fps_r\Downloads\rewrapped-7fe6b3a04c9f.json')
+    sh = gc.open('reWrapped')
+    worksheet = sh.worksheet(f'{time_period}')
+    worksheet.update([df.columns.values.tolist()] + df.values.tolist())
+    print('Done')
+
+time_ranges = ['short_term', 'medium_term', 'long_term']
+for time_period in time_ranges:
+    top_tracks = sp.current_user_top_tracks(limit = 20, offset = 0, time_range = time_period)
+    track_ids = get_track_ids(top_tracks)
+    insert_to_gsheet(track_ids)
